@@ -1,5 +1,6 @@
 // ==========================================
-// 100% 支援 iOS / iPhone 的手部感測猜拳專案
+// 跨平台終極相容版：手部感測與電腦猜拳
+// 支援 Android 直開、完美解鎖 iOS 卡 LOADING 問題
 // ==========================================
 
 let video;
@@ -14,38 +15,47 @@ let gameResult = "看看誰會贏？";
 let choices = ["✊ 石頭", "✌️ 剪刀", "🖐️ 布"];
 let lastMatchTime = 0;
 
-// iOS 專用狀態鎖
+// iOS 啟動鎖
 let isCameraStarted = false; 
 
 function preload() {
-  handPose = ml5.handPose({ flipped: true });
+  // 💡 移除所有參數，用最乾淨的方式載入模型（減少 iOS 載入失敗率）
+  handPose = ml5.handPose();
 }
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
   
-  // 先不要在這裡開 createCapture，改到 touchStarted/mousePressed 裡面開
+  // 💡 Android 或電腦如果支援直開，這裡會嘗試建立；iOS 如果擋下來，就靠下面的點擊解鎖
+  video = createCapture(VIDEO, function(stream) {
+    isCameraStarted = true; // 如果成功啟動，就直接解鎖
+  });
+  video.hide();
+
+  handPose.detectStart(video, gotHands);
 }
 
 function gotHands(results) {
   hands = results;
 }
 
-// 🛑 核心修改：當滑鼠點擊或手機點觸螢幕時，才正式向 iOS 要求啟動相機
+// 💡 專門做給 iPhone 的解鎖大招：如果卡在 LOADING，點一下螢幕強制喚醒相機
 function touchStarted() {
-  if (!isCameraStarted) {
-    // 建立攝影機並設定鏡像
-    video = createCapture(VIDEO, { flipped: true }, function(stream) {
-      console.log("相機成功啟動！");
-    });
-    video.hide();
-
-    // 開始持續偵測手勢
-    handPose.detectStart(video, gotHands);
+  if (!isCameraStarted && video) {
+    video.remove(); // 把原本卡住的相機拔掉
     
-    isCameraStarted = true; // 解鎖狀態
+    // 用最毫無雜質的純淨寫法重新呼叫鏡頭
+    video = createCapture(VIDEO);
+    video.hide();
+    
+    handPose.detectStart(video, gotHands);
+    isCameraStarted = true;
   }
-  return false; // 防止行動裝置預設的雙擊縮放行為
+  // 處理 iOS 聲音與點擊音訊環境解鎖
+  if (getAudioContext().state === 'suspended') {
+    getAudioContext().resume();
+  }
+  return false; 
 }
 
 function draw() {
@@ -58,13 +68,13 @@ function draw() {
   textAlign(CENTER, TOP);
   text("414730910陳益宏文字", width / 2, 20);
 
-  // 🛑 如果還沒點擊螢幕啟動相機，顯示提示畫面
-  if (!isCameraStarted) {
+  // 🛑 如果 iPhone 還是卡在讀取，顯示引導畫面提示點擊
+  if (!isCameraStarted || !video) {
     fill(94, 84, 142);
     textSize(24);
     textAlign(CENTER, CENTER);
-    text("👉 請點擊螢幕任何地方 👈\n以允許 iPhone 啟動相機遊戲", width / 2, height / 2);
-    return; // 後面的遊戲畫面先不畫
+    text("⏳ 遊戲載入中...\n\n如果您使用 iPhone 且畫面沒反應\n👉 請點擊螢幕任意地方 👈\n強制解鎖相機權限！", width / 2, height / 2);
+    return; 
   }
 
   // --- 以下為原本的猜拳與水泡邏輯，完全保留 ---
@@ -74,9 +84,7 @@ function draw() {
   let offsetY = (height - imgH) / 2;
 
   // 繪製攝影機影像
-  if (video) {
-    image(video, offsetX, offsetY, imgW, imgH);
-  }
+  image(video, offsetX, offsetY, imgW, imgH);
 
   drawGameUI(offsetY + imgH);
 
